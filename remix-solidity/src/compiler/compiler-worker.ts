@@ -2,8 +2,8 @@
 
 var solc = require('solc/wrapper')
 
-var compileJSON = function () { return '' }
-var missingInputs = []
+var compileJSON: any|null = (input) => { return '' }
+var missingInputs: any = []
 
 module.exports = function (self) {
   self.addEventListener('message', function (e) {
@@ -20,7 +20,7 @@ module.exports = function (self) {
 
         var compiler = solc(self.Module)
 
-        compileJSON = function (input) {
+        compileJSON = (input) => {
           try {
             let missingInputsCallback = function (path) {
               missingInputs.push(path)
