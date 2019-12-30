@@ -3,17 +3,18 @@
 var solc = require('solc/wrapper')
 var solcABI = require('solc/abi')
 var webworkify = require('webworkify')
-var compilerInput = require('./compiler-input')
+import compilerInput from './compiler-input'
 var remixLib = require('remix-lib')
 var EventManager = remixLib.EventManager
 var txHelper = require('./txHelper')
+import { Source, SourceWithTarget, EVMVersion, Language, State, CompilationResult } from './types'
 
 /*
   trigger compilationFinished, compilerLoaded, compilationStarted, compilationDuration
 */
 export class Compiler {
   event: any
-  state: any
+  state: State
   handleImportCall: any
 
   constructor (handleImportCall) {
@@ -26,6 +27,7 @@ export class Compiler {
       evmVersion: null,
       language: 'Solidity',
       compilationStartTime: null,
+      target: null,
       lastCompilationResult: {
         data: null,
         source: null
@@ -45,20 +47,20 @@ export class Compiler {
     })
   }
 
-  setOptimize (_optimize) {
+  setOptimize (_optimize: boolean) {
     this.state.optimize = _optimize
   }
 
-  setEvmVersion (_evmVersion) {
+  setEvmVersion (_evmVersion: EVMVersion) {
     this.state.evmVersion = _evmVersion
   }
 
-  setLanguage (_language) {
+  setLanguage (_language: Language) {
     this.state.language = _language
   }
 
-  internalCompile (files, target?, missingInputs?) {
-    this.gatherImports(files, target, missingInputs, (error, input) => {
+  internalCompile (files: Source, missingInputs?: any[]) {
+    this.gatherImports(files, missingInputs, (error, input) => {
       if (error) {
         this.state.lastCompilationResult = null
         this.event.trigger('compilationFinished', [false, {'error': { formattedMessage: error, severity: 'error' }}, files])
@@ -68,45 +70,47 @@ export class Compiler {
     })
   }
 
-  compile (files, target) {
+  compile (files: Source, target: string) {
+    this.state.target = target
     this.event.trigger('compilationStarted', [])
-    this.internalCompile(files, target)
+    this.internalCompile(files)
   }
 
   setCompileJSON (_compileJSON) {
     this.state.compileJSON = _compileJSON
   }
 
-  onCompilerLoaded (version) {
+  onCompilerLoaded (version: string) {
     this.state.currentVersion = version
     this.event.trigger('compilerLoaded', [version])
   }
 
   onInternalCompilerLoaded () {
     if (this.state.worker === null) {
-      var compiler
+      let compiler
       if (typeof (window) === 'undefined') {
         compiler = require('solc')
       } else {
         compiler = solc(window['Module'])
       }
 
-      this.state.compileJSON = (source) => {
-        var missingInputs: any = []
-        var missingInputsCallback = (path) => {
+      this.state.compileJSON = (source: SourceWithTarget) => {
+        let missingInputs: any = []
+        let missingInputsCallback = (path) => {
           missingInputs.push(path)
           return { error: 'Deferred import' }
         }
 
-        var result
+        let result
         try {
-          var input = compilerInput(source.sources, {optimize: this.state.optimize, evmVersion: this.state.evmVersion, language: this.state.language, target: source.target})
-          result = compiler.compile(input, { import: missingInputsCallback })
-          result = JSON.parse(result)
+          if(source && source.sources) {
+            let input = compilerInput(source.sources, {optimize: this.state.optimize, evmVersion: this.state.evmVersion, language: this.state.language})
+            result = compiler.compile(input, { import: missingInputsCallback })
+            result = JSON.parse(result)
+          }
         } catch (exception) {
           result = { error: { formattedMessage: 'Uncaught JavaScript exception:\n' + exception, severity: 'error', mode: 'panic' } }
         }
-
         this.compilationFinished(result, missingInputs, source)
       }
       this.onCompilerLoaded(compiler.version())
@@ -119,8 +123,8 @@ export class Compiler {
     * @param {String} name    - contract name
     * @returns contract obj and associated file: { contract, file } or null
     */
-  getContract (name) {
-    if (this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.contracts) {
+  getContract (name: string) {
+    if (this.state.lastCompilationResult && this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.contracts) {
       return txHelper.getContract(name, this.state.lastCompilationResult.data.contracts)
     }
     return null
@@ -130,8 +134,8 @@ export class Compiler {
     * call the given @arg cb (function) for all the contracts. Uses last compilation result
     * @param {Function} cb    - callback
     */
-  visitContracts (cb) {
-    if (this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.contracts) {
+  visitContracts (cb: any) {
+    if (this.state.lastCompilationResult && this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.contracts) {
       return txHelper.visitContracts(this.state.lastCompilationResult.data.contracts, cb)
     }
     return null
@@ -142,7 +146,7 @@ export class Compiler {
     * @return {Object}     - contracts
     */
   getContracts () {
-    if (this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.contracts) {
+    if (this.state.lastCompilationResult && this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.contracts) {
       return this.state.lastCompilationResult.data.contracts
     }
     return null
@@ -153,7 +157,7 @@ export class Compiler {
     * @param {Object} cb    - map of sources
     */
   getSources (){
-    if (this.state.lastCompilationResult.source) {
+    if (this.state.lastCompilationResult && this.state.lastCompilationResult.source) {
       return this.state.lastCompilationResult.source.sources
     }
     return null
@@ -163,8 +167,8 @@ export class Compiler {
     * return the sources @arg fileName from the last compilation result
     * @param {Object} cb    - map of sources
     */
-  getSource (fileName) {
-    if (this.state.lastCompilationResult.source) {
+  getSource (fileName: string) {
+    if (this.state.lastCompilationResult && this.state.lastCompilationResult.source && this.state.lastCompilationResult.source.sources) {
       return this.state.lastCompilationResult.source.sources[fileName]
     }
     return null
@@ -174,17 +178,17 @@ export class Compiler {
     * return the source from the last compilation result that has the given index. null if source not found
     * @param {Int} index    - index of the source
     */
-  getSourceName = (index) => {
-    if (this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.sources) {
+  getSourceName (index: number) {
+    if (this.state.lastCompilationResult && this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.sources) {
       return Object.keys(this.state.lastCompilationResult.data.sources)[index]
     }
     return null
   }
 
-  compilationFinished (data, missingInputs?, source?) {
-    var noFatalErrors = true // ie warnings are ok
+  compilationFinished (data: CompilationResult, missingInputs?: any[], source?: SourceWithTarget) {
+    let noFatalErrors: boolean = true // ie warnings are ok
 
-    var isValidError = (error) => {
+    let isValidError = (error) => {
       // The deferred import is not a real error
       // FIXME: maybe have a better check?
       if (/Deferred import/.exec(error.message)) {
@@ -213,23 +217,26 @@ export class Compiler {
       // There are fatal errors - abort here
       this.state.lastCompilationResult = null
       this.event.trigger('compilationFinished', [false, data, source])
-    } else if (missingInputs !== undefined && missingInputs.length > 0) {
+    } else if (missingInputs && missingInputs.length > 0 && source && source.sources) {
       // try compiling again with the new set of inputs
 
-      this.internalCompile(source.sources, source.target, missingInputs)
+      this.internalCompile(source.sources, missingInputs)
     } else {
       data = this.updateInterface(data)
-
-      this.state.lastCompilationResult = {
+      if(source)
+      {
+        this.state.lastCompilationResult = {
         data: data,
         source: source
+        }
+        source.target = this.state.target;
       }
       this.event.trigger('compilationFinished', [true, data, source])
     }
   }
 
   // TODO: needs to be changed to be more node friendly
-  loadVersion (usingWorker, url) {
+  loadVersion (usingWorker: boolean, url: string) {
     console.log('Loading ' + url + ' ' + (usingWorker ? 'with worker' : 'without worker'))
     this.event.trigger('loadingCompiler', [url, usingWorker])
 
@@ -244,7 +251,7 @@ export class Compiler {
     }
   }
 
-  loadInternal (url) {
+  loadInternal (url: string) {
     delete window['Module']
     // NOTE: workaround some browsers?
     window['Module'] = undefined
@@ -254,11 +261,11 @@ export class Compiler {
       this.compilationFinished({ error: { formattedMessage: 'Compiler not yet loaded.' } })
     })
 
-    var newScript = document.createElement('script')
+    let newScript: any = document.createElement('script')
     newScript.type = 'text/javascript'
     newScript.src = url
     document.getElementsByTagName('head')[0].appendChild(newScript)
-    var check = window.setInterval(() => {
+    let check: any = window.setInterval(() => {
       if (!window['Module']) {
         return
       }
@@ -267,23 +274,23 @@ export class Compiler {
     }, 200)
   }
 
-  loadWorker (url) {
+  loadWorker (url: string) {
     this.state.worker = webworkify(require('./compiler-worker.js'))
-    var jobs: any = []
-    this.state.worker.addEventListener('message',(msg) => {
-      var data = msg.data
+    let jobs: any = []
+    this.state.worker.addEventListener('message', (msg) => {
+      const data: any = msg.data
       switch (data.cmd) {
         case 'versionLoaded':
           this.onCompilerLoaded(data.data)
           break
         case 'compiled':
-          var result
+          let result: any
           try {
             result = JSON.parse(data.data)
           } catch (exception) {
             result = { 'error': 'Invalid JSON output from the compiler: ' + exception }
           }
-          var sources = {}
+          let sources: SourceWithTarget = {}
           if (data.job in jobs !== undefined) {
             sources = jobs[data.job]['sources']
             delete jobs[data.job]
@@ -295,28 +302,30 @@ export class Compiler {
     this.state.worker.addEventListener('error', (msg) => {
       this.compilationFinished({ error: 'Worker error: ' + msg.data })
     })
-    this.state.compileJSON = (source) => {
-      jobs.push({sources: source})
-      this.state.worker.postMessage({cmd: 'compile', job: jobs.length - 1, input: compilerInput(source.sources,
-        {optimize: this.state.optimize, evmVersion: this.state.evmVersion, language: this.state.language, target: source.target})})
+    this.state.compileJSON = (source: SourceWithTarget) => {
+      if(source && source.sources) {
+        jobs.push({sources: source})
+        this.state.worker.postMessage({cmd: 'compile', job: jobs.length - 1, input: compilerInput(source.sources,
+        {optimize: this.state.optimize, evmVersion: this.state.evmVersion, language: this.state.language})})
+      }
     }
     this.state.worker.postMessage({cmd: 'loadVersion', data: url})
   }
 
-  gatherImports (files, target, importHints, cb) {
+  gatherImports (files: Source, importHints?: any[], cb?) {
     importHints = importHints || []
 
     // FIXME: This will only match imports if the file begins with one.
     //        It should tokenize by lines and check each.
     // eslint-disable-next-line no-useless-escape
-    var importRegex = /^\s*import\s*[\'\"]([^\'\"]+)[\'\"];/g
+    const importRegex = /^\s*import\s*[\'\"]([^\'\"]+)[\'\"];/g
 
-    for (var fileName in files) {
-      var match
+    for (const fileName in files) {
+      let match
       while ((match = importRegex.exec(files[fileName].content))) {
-        var importFilePath = match[1]
+        let importFilePath = match[1]
         if (importFilePath.startsWith('./')) {
-          var path = /(.*\/).*/.exec(fileName)
+          const path = /(.*\/).*/.exec(fileName)
           if (path !== null) {
             importFilePath = importFilePath.replace('./', path[1])
           } else {
@@ -332,7 +341,7 @@ export class Compiler {
     }
 
     while (importHints.length > 0) {
-      var m = importHints.pop()
+      const m = importHints.pop()
       if (m in files) {
         continue
       }
@@ -343,7 +352,7 @@ export class Compiler {
             cb(err)
           } else {
             files[m] = { content }
-            this.gatherImports(files, target, importHints, cb)
+            this.gatherImports(files, importHints, cb)
           }
         })
       }
@@ -351,18 +360,18 @@ export class Compiler {
       return
     }
 
-    cb(null, { 'sources': files, 'target': target })
+    cb(null, { 'sources': files })
   }
 
-  truncateVersion (version) {
-    var tmp = /^(\d+.\d+.\d+)/.exec(version)
+  truncateVersion (version: string) {
+    const tmp = /^(\d+.\d+.\d+)/.exec(version)
     if (tmp) {
       return tmp[1]
     }
     return version
   }
   
-  updateInterface (data) {
+  updateInterface (data: CompilationResult) {
     txHelper.visitContracts(data.contracts, (contract) => {
       if (!contract.object.abi) contract.object.abi = []
       if (this.state.language === 'Yul' && contract.object.abi.length === 0) {
@@ -374,7 +383,8 @@ export class Compiler {
           'type': 'fallback'
         })
       }
-      data.contracts[contract.file][contract.name].abi = solcABI.update(this.truncateVersion(this.state.currentVersion), contract.object.abi)
+      if(data && data.contracts && this.state.currentVersion)
+        data.contracts[contract.file][contract.name].abi = solcABI.update(this.truncateVersion(this.state.currentVersion), contract.object.abi)
     })
     return data
   }
