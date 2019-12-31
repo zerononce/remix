@@ -7,17 +7,16 @@ import compilerInput from './compiler-input'
 var remixLib = require('remix-lib')
 var EventManager = remixLib.EventManager
 var txHelper = require('./txHelper')
-import { Source, SourceWithTarget, EVMVersion, Language, State, CompilationResult } from './types'
+import { Source, SourceWithTarget, MessageFromWorker, CompilerState, CompilationResult } from './types'
 
 /*
   trigger compilationFinished, compilerLoaded, compilationStarted, compilationDuration
 */
 export class Compiler {
   event: any
-  state: State
-  handleImportCall: any
+  state: CompilerState
 
-  constructor (handleImportCall) {
+  constructor (public handleImportCall) {
     this.event = new EventManager()
     this.state = {
       compileJSON: null,
@@ -33,7 +32,6 @@ export class Compiler {
         source: null
       }
     }
-    this.handleImportCall = handleImportCall
 
     this.event.register('compilationFinished', (success, data, source) => {
       if (success && this.state.compilationStartTime) {
@@ -47,16 +45,8 @@ export class Compiler {
     })
   }
 
-  setOptimize (_optimize: boolean) {
-    this.state.optimize = _optimize
-  }
-
-  setEvmVersion (_evmVersion: EVMVersion) {
-    this.state.evmVersion = _evmVersion
-  }
-
-  setLanguage (_language: Language) {
-    this.state.language = _language
+  set <K extends keyof CompilerState>(key: K, value: CompilerState[K]) {
+    this.state[key] = value
   }
 
   internalCompile (files: Source, missingInputs?: any[]) {
@@ -76,10 +66,6 @@ export class Compiler {
     this.internalCompile(files)
   }
 
-  setCompileJSON (_compileJSON) {
-    this.state.compileJSON = _compileJSON
-  }
-
   onCompilerLoaded (version: string) {
     this.state.currentVersion = version
     this.event.trigger('compilerLoaded', [version])
@@ -87,13 +73,7 @@ export class Compiler {
 
   onInternalCompilerLoaded () {
     if (this.state.worker === null) {
-      let compiler
-      if (typeof (window) === 'undefined') {
-        compiler = require('solc')
-      } else {
-        compiler = solc(window['Module'])
-      }
-
+      const compiler = typeof (window) === 'undefined' ? require('solc') : solc(window['Module'])
       this.state.compileJSON = (source: SourceWithTarget) => {
         let missingInputs: any = []
         let missingInputsCallback = (path) => {
@@ -143,7 +123,6 @@ export class Compiler {
 
   /**
     * return the compiled contracts from the last compilation result
-    * @return {Object}     - contracts
     */
   getContracts () {
     if (this.state.lastCompilationResult && this.state.lastCompilationResult.data && this.state.lastCompilationResult.data.contracts) {
@@ -154,7 +133,6 @@ export class Compiler {
 
    /**
     * return the sources from the last compilation result
-    * @param {Object} cb    - map of sources
     */
   getSources (){
     if (this.state.lastCompilationResult && this.state.lastCompilationResult.source) {
@@ -257,7 +235,7 @@ export class Compiler {
     window['Module'] = undefined
 
     // Set a safe fallback until the new one is loaded
-    this.setCompileJSON((source) => {
+    this.set('compileJSON', (source: SourceWithTarget) => {
       this.compilationFinished({ error: { formattedMessage: 'Compiler not yet loaded.' } })
     })
 
@@ -275,27 +253,30 @@ export class Compiler {
   }
 
   loadWorker (url: string) {
-    this.state.worker = webworkify(require('./compiler-worker.js'))
-    let jobs: any = []
+    this.state.worker = webworkify(require('./compiler-worker.js').default)
+    let jobs: Record<'sources', SourceWithTarget> [] = []
     this.state.worker.addEventListener('message', (msg) => {
-      const data: any = msg.data
+      const data: MessageFromWorker = msg.data
       switch (data.cmd) {
         case 'versionLoaded':
-          this.onCompilerLoaded(data.data)
+          if(data.data)
+            this.onCompilerLoaded(data.data)
           break
         case 'compiled':
-          let result: any
-          try {
-            result = JSON.parse(data.data)
-          } catch (exception) {
-            result = { 'error': 'Invalid JSON output from the compiler: ' + exception }
+          let result: any 
+          if(data.data && data.job) {
+            try {
+              result = JSON.parse(data.data)
+            } catch (exception) {
+              result = { 'error': 'Invalid JSON output from the compiler: ' + exception }
+            }
+            let sources: SourceWithTarget = {}
+            if (data.job in jobs !== undefined && jobs[data.job].sources) {
+              sources = jobs[data.job].sources
+              delete jobs[data.job]
+            }
+            this.compilationFinished(result, data.missingInputs, sources)
           }
-          let sources: SourceWithTarget = {}
-          if (data.job in jobs !== undefined) {
-            sources = jobs[data.job]['sources']
-            delete jobs[data.job]
-          }
-          this.compilationFinished(result, data.missingInputs, sources)
           break
       }
     })

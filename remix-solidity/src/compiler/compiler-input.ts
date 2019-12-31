@@ -27,9 +27,9 @@ export default (sources: Source, opts: CompilerInputOptions) => {
     o.language = opts.language
   }
   if (opts.language === 'Yul' && o.settings.optimizer.enabled) {
-    if (!o.settings.optimizer['details']) 
-      o.settings.optimizer['details'] = {}
-    o.settings.optimizer['details']['yul'] = true
+    if (!o.settings.optimizer.details) 
+      o.settings.optimizer.details = {}
+    o.settings.optimizer.details.yul = true
   }
   return JSON.stringify(o)
 }

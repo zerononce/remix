@@ -1,13 +1,14 @@
 'use strict'
 
-var solc = require('solc/wrapper')
+const solc = require('solc/wrapper')
+import { CompilerInput, MessageToWorker } from './types'
 
-var compileJSON: any|null = (input) => { return '' }
-var missingInputs: any = []
+var compileJSON: ((input: CompilerInput) => string) | null = (input) => { return '' }
+var missingInputs: string[] = []
 
-module.exports = function (self) {
+export default (self) => {
   self.addEventListener('message', function (e) {
-    var data = e.data
+    const data: MessageToWorker = e.data
     switch (data.cmd) {
       case 'loadVersion':
         delete self.Module
@@ -18,7 +19,7 @@ module.exports = function (self) {
 
         self.importScripts(data.data)
 
-        var compiler = solc(self.Module)
+        let compiler = solc(self.Module)
 
         compileJSON = (input) => {
           try {
@@ -39,7 +40,8 @@ module.exports = function (self) {
         break
       case 'compile':
         missingInputs.length = 0
-        self.postMessage({cmd: 'compiled', job: data.job, data: compileJSON(data.input), missingInputs: missingInputs})
+        if(data.input && compileJSON)
+          self.postMessage({cmd: 'compiled', job: data.job, data: compileJSON(data.input), missingInputs: missingInputs})
         break
     }
   }, false)

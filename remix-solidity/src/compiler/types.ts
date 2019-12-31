@@ -154,7 +154,7 @@ export type EVMVersion = 'homestead' | 'tangerineWhistle' | 'spuriousDragon' | '
 
 export type Language = 'Solidity' | 'Yul'
 
-export interface State {
+export interface CompilerState {
     compileJSON: any,
     worker: any,
     currentVersion: string| null| undefined,
@@ -172,6 +172,20 @@ export interface State {
 export interface SourceWithTarget {
     sources?: Source,
     target?: string | null | undefined
+}
+
+export interface MessageToWorker {
+  cmd: string,
+  job?: number,
+  input?: CompilerInput,
+  data?: string
+}
+
+export interface MessageFromWorker {
+  cmd: string,
+  job?: number,
+  missingInputs?: string[],
+  data?: string
 }
 
 export interface CompilationResult {

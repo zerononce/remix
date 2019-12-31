@@ -1,4 +1,2 @@
-import  { Compiler } from './src/compiler/compiler'
-import  CompilerInput from './src/compiler/compiler-input'
-
-export {Compiler, CompilerInput}
+export  { Compiler } from './src/compiler/compiler'
+export  { default as CompilerInput} from './src/compiler/compiler-input'
