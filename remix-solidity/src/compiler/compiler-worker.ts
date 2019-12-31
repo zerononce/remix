@@ -2,7 +2,6 @@
 
 const solc = require('solc/wrapper')
 import { CompilerInput, MessageToWorker } from './types'
-
 var compileJSON: ((input: CompilerInput) => string) | null = (input) => { return '' }
 var missingInputs: string[] = []
 
@@ -14,13 +13,9 @@ export default (self) => {
         delete self.Module
         // NOTE: workaround some browsers?
         self.Module = undefined
-
         compileJSON = null
-
         self.importScripts(data.data)
-
         let compiler = solc(self.Module)
-
         compileJSON = (input) => {
           try {
             let missingInputsCallback = function (path) {
@@ -32,12 +27,12 @@ export default (self) => {
             return JSON.stringify({ error: 'Uncaught JavaScript exception:\n' + exception })
           }
         }
-
         self.postMessage({
           cmd: 'versionLoaded',
           data: compiler.version()
         })
         break
+        
       case 'compile':
         missingInputs.length = 0
         if(data.input && compileJSON)

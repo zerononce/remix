@@ -142,7 +142,7 @@ export interface Source {
 }
 
 export interface CompilerInputOptions {
-    optimize: any,
+    optimize: boolean | number,
     libraries?:  {
         [fileName: string]: Record<string, string>
     },
@@ -155,7 +155,7 @@ export type EVMVersion = 'homestead' | 'tangerineWhistle' | 'spuriousDragon' | '
 export type Language = 'Solidity' | 'Yul'
 
 export interface CompilerState {
-    compileJSON: any,
+    compileJSON: ((input: SourceWithTarget) => void) | null,
     worker: any,
     currentVersion: string| null| undefined,
     optimize: boolean,
@@ -164,7 +164,7 @@ export interface CompilerState {
     compilationStartTime: number| null,
     target: string | null,
     lastCompilationResult: {
-      data: any,
+      data: CompilationResult | null,
       source: SourceWithTarget | null | undefined
     } | null
 }
@@ -188,8 +188,22 @@ export interface MessageFromWorker {
   data?: string
 }
 
+export interface visitContractsCallbackParam {
+  name: string, 
+  object: CompiledContract,
+  file: string
+}
+
+export interface visitContractsCallbackInterface {
+    (param: visitContractsCallbackParam): boolean | void
+}
+
+export interface gatherImportsCallbackInterface {
+  (err?: Error | null, result?: SourceWithTarget) : any
+}
+
 export interface CompilationResult {
-    error?: any,
+    error?:  CompilationError,
     /** not present if no errors/warnings were encountered */
     errors?: CompilationError[]
     /** This contains the file-level outputs. In can be limited/filtered by the outputSelection settings */
@@ -217,11 +231,12 @@ export interface CompilationResult {
       end: number
     }
     /** Error type */
-    type: CompilationErrorType
+    type?: CompilationErrorType
     /** Component where the error originated, such as "general", "ewasm", etc. */
-    component: 'general' | 'ewasm' | string
-    severity: 'error' | 'warning'
-    message: string
+    component?: 'general' | 'ewasm' | string
+    severity?: 'error' | 'warning'
+    message?: string
+    mode?: 'panic'
     /** the message formatted with source location */
     formattedMessage?: string
   }
