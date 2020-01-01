@@ -1,6 +1,6 @@
 'use strict'
 
-const solc = require('solc/wrapper')
+import solc from 'solc/wrapper'
 import { CompilerInput, MessageToWorker } from './types'
 var compileJSON: ((input: CompilerInput) => string) | null = (input) => { return '' }
 var missingInputs: string[] = []
@@ -14,8 +14,9 @@ export default (self) => {
         // NOTE: workaround some browsers?
         self.Module = undefined
         compileJSON = null
+        //importScripts() method of synchronously imports one or more scripts into the worker's scope
         self.importScripts(data.data)
-        let compiler = solc(self.Module)
+        let compiler: solc = solc(self.Module)
         compileJSON = (input) => {
           try {
             let missingInputsCallback = function (path) {
@@ -35,8 +36,14 @@ export default (self) => {
         
       case 'compile':
         missingInputs.length = 0
-        if(data.input && compileJSON)
-          self.postMessage({cmd: 'compiled', job: data.job, data: compileJSON(data.input), missingInputs: missingInputs})
+        if(data.input && compileJSON) {
+          self.postMessage({
+            cmd: 'compiled', 
+            job: data.job, 
+            data: compileJSON(data.input), 
+            missingInputs: missingInputs
+          })
+        }
         break
     }
   }, false)
